@@ -1,65 +1,57 @@
-local addon, ns = ...
+local ADDON_NAME, ns = ...
 
-local bufftooltip; -- The tooltip we use to scan our temporary weapon enchants
-local f = CreateFrame("Frame")
-local BPT_VERSION = tonumber(GetAddOnMetadata(addon, "Version"))
+---------------
+-- Constants --
+---------------
+local BPT_VERSION = tonumber(GetAddOnMetadata(ADDON_NAME, "Version")) or 2.0
 local LDB = LibStub("LibDataBroker-1.1")
 local POISON_ICON = "Interface\\Icons\\Trade_BrewPoison.blp"
 local NO_ICON = "Interface\\PaperDollInfoFrame\\UI-GearManager-LeaveItem-Opaque.blp"
 local NO_WEAPON_STRING = "No Weapon"
 local NO_POISON_STRING = "No Poison"
 local FORMAT_STRING = "%s %s"
+
 local POISON_ICONS = {
 	["Instant Poison"]		= "Interface\\Icons\\Ability_Poisons",
 	["Deadly Poison"]		= "Interface\\Icons\\Ability_Rogue_DualWeild",
 	["Crippling Poison"]	= "Interface\\Icons\\Ability_PoisonSting",
 	["Mind-Numbing Poison"]	= "Interface\\Icons\\Spell_Nature_NullifyDisease",
 	["Wound Poison"]		= "Interface\\Icons\\INV_Misc_Herb_16",
-	["Earthliving"]			= "Interface\\Icons\\Spell_Shaman_UnleashWeapon_Life",
-	["Flametongue"]			= "Interface\\Icons\\Spell_Shaman_UnleashWeapon_Flame",
-	["Windfury"]			= "Interface\\Icons\\Spell_Shaman_UnleashWeapon_Wind",
-	["Rockbiter"]			= "Interface\\Icons\\Spell_Shaman_UnleashWeapon_Earth",
 }
 
---Create the data objects
-ns.mainhand = LDB:NewDataObject("PoisonTimers Main Hand", {type = "data source", text = "", timeLeft = 0, icon = POISON_ICON, slotname = "Main Hand"})
-ns.offhand  = LDB:NewDataObject("PoisonTimers Off Hand",  {type = "data source", text = "", timeLeft = 0, icon = POISON_ICON, slotname = "Off Hand"})
-ns.thrown   = LDB:NewDataObject("PoisonTimers Thrown",    {type = "data source", text = "", timeLeft = 0, icon = POISON_ICON, slotname = "Thrown"})
+------------------
+-- Data Objects --
+------------------
+ns.mainhand = LDB:NewDataObject("PoisonTimers Main Hand", {type = "data source", text = "", timeLeft = 0, icon = POISON_ICON, slotname = "Main Hand", key = "mainhand"})
+ns.offhand  = LDB:NewDataObject("PoisonTimers Off Hand",  {type = "data source", text = "", timeLeft = 0, icon = POISON_ICON, slotname = "Off Hand", key = "offhand"})
 
-LibStub("ChoonLib-1.0"):Embed(f, "PoisonTimers")
+local f = CreateFrame("Frame")
 
-local function GetTimerText(objectname)
-	if not objectname then return "Error: Missing objectname" end
-	if not ns[objectname] then return "Error: Invalid objectname" end
+local function GetTimerText(dataObj)
+	if not dataObj then return "Error: Missing dataObj" end
 	
-	local timeleft = ns[objectname].timeLeft
-	local showicon = BPT_DB[objectname].showicon
-	local str = BPT_DB[objectname].string
-	local icon = ns[objectname].poisonicon
+	local timeleft = dataObj.timeLeft
+	local icon = dataObj.poisonicon
 	
+	local settings = BPT_DB[dataObj.key]
+	local showicon, str = settings.showicon, settings.string
+		
 	return strjoin("", showicon and "|T".. icon ..":15|t" or "", timeleft < 0 and "|cffff0000" or "", date(str, timeleft > 0 and timeleft or 0), timeleft < 0 and "|r" or "")
-	
-	--[[if ns[objectname].timeLeft > 0 then
-		return date(BPT_DB[objectname], ns[objectname].timeLeft)
-	else
-		return date("|cffff0000".. BPT_DB[objectname] .."|r", 0)
-	end]]
 end
 
 f:SetScript("OnUpdate", function(self, elapsed)
 	ns.mainhand.timeLeft = ns.mainhand.timeLeft - elapsed
-	ns.mainhand.text = GetTimerText("mainhand")
+	ns.mainhand.text = GetTimerText(ns.mainhand)
 
 	ns.offhand.timeLeft = ns.offhand.timeLeft - elapsed
-	ns.offhand.text = GetTimerText("offhand")
-	
-	ns.thrown.timeLeft = ns.thrown.timeLeft - elapsed
-	ns.thrown.text = GetTimerText("thrown")
+	ns.offhand.text = GetTimerText(ns.offhand)
 end)
 
 ------
---The code below here was adapated from Tomber's Raven, which adapted it from ccknight's PitBull Unit Frames
+-- The code below here was adapated from Tomber's Raven, which adapted it from ccknight's PitBull Unit Frames
 ------
+
+local bufftooltip; -- The tooltip we use to scan our temporary weapon enchants
 
 -- Initialize tooltip to be used for determining weapon buffs
 -- This code is based on the Pitbull implementation
@@ -68,10 +60,10 @@ function f:InitialiseBuffTooltip()
 	bufftooltip:SetOwner(UIParent, "ANCHOR_NONE")
 	bufftooltip.lines = {}
 	local fs = bufftooltip:CreateFontString()
-	fs:SetFontObject(_G.GameFontNormal)
+	fs:SetFontObject(GameFontNormal)
 	for i = 1, 30 do
 		local ls = bufftooltip:CreateFontString()
-		ls:SetFontObject(_G.GameFontNormal)
+		ls:SetFontObject(GameFontNormal)
 		bufftooltip:AddFontStrings(ls, fs)
 		bufftooltip.lines[i] = ls
 	end
@@ -100,48 +92,34 @@ local function GetWeaponBuff(weaponSlot)
 end
 
 -----
---End of Raven code
+-- End of Raven code
 -----
 
+local function UpdateWeapon(dataObj, invSlot)
+	dataObj.itemlink = GetInventoryItemLink("player", invSlot) or NO_WEAPON_STRING
+	dataObj.itemicon = GetInventoryItemTexture("player", invSlot) or NO_ICON
+	dataObj.poisonname = GetWeaponBuff(invSlot) or NO_POISON_STRING
+	dataObj.poisonicon = POISON_ICONS[dataObj.poisonname] or NO_ICON
+	dataObj.text = GetTimerText(dataObj)
+end
 
 local function UpdateWeapons()
-	local hasMainHandEnchant, mainHandExpiration, mainHandCharges, hasOffHandEnchant, offHandExpiration, offHandCharges, hasThrownEnchant, thrownExpiration, thrownCharges = GetWeaponEnchantInfo()
+	local hasMainHandEnchant, mainHandExpiration, mainHandCharges, hasOffHandEnchant, offHandExpiration, offHandCharges = GetWeaponEnchantInfo()
 
 	if hasMainHandEnchant then
 		ns.mainhand.timeLeft = mainHandExpiration / 1000
 	else
 		ns.mainhand.timeLeft = 0
 	end
-	print("mainhand", (mainHandExpiration or 0) / 1000, ns.mainhand.timeLeft)
-	ns.mainhand.itemlink = GetInventoryItemLink("player", INVSLOT_MAINHAND) or NO_WEAPON_STRING
-	ns.mainhand.itemicon = GetInventoryItemTexture("player", INVSLOT_MAINHAND) or NO_ICON
-	ns.mainhand.poisonname = GetWeaponBuff(INVSLOT_MAINHAND) or NO_POISON_STRING
-	ns.mainhand.poisonicon = POISON_ICONS[ns.mainhand.poisonname] or NO_ICON
-	ns.mainhand.text = GetTimerText("mainhand")
-	-----
+	
 	if hasOffHandEnchant then
 		ns.offhand.timeLeft = offHandExpiration / 1000
 	else
 		ns.offhand.timeLeft = 0
 	end
-	print("offhand", (offHandExpiration or 0) / 1000, ns.offhand.timeLeft)
-	ns.offhand.itemlink = GetInventoryItemLink("player", INVSLOT_OFFHAND) or NO_WEAPON_STRING
-	ns.offhand.itemicon = GetInventoryItemTexture("player", INVSLOT_OFFHAND) or NO_ICON
-	ns.offhand.poisonname = GetWeaponBuff(INVSLOT_OFFHAND) or NO_POISON_STRING
-	ns.offhand.poisonicon = POISON_ICONS[ns.offhand.poisonname] or NO_ICON
-	ns.offhand.text = GetTimerText("offhand")
-	------
-	if hasThrownEnchant then
-		ns.thrown.timeLeft = thrownExpiration / 1000
-	else
-		ns.thrown.timeLeft = 0
-	end
-	print("thrown", (thrownExpiration or 0) / 1000, ns.thrown.timeLeft)
-	ns.thrown.itemlink = GetInventoryItemLink("player", INVSLOT_RANGED) or NO_WEAPON_STRING
-	ns.thrown.itemicon = GetInventoryItemTexture("player", INVSLOT_RANGED) or NO_ICON
-	ns.thrown.poisonname = GetWeaponBuff(INVSLOT_RANGED) or NO_POISON_STRING
-	ns.thrown.poisonicon = POISON_ICONS[ns.thrown.poisonname] or NO_ICON
-	ns.thrown.text = GetTimerText("thrown")
+	
+	UpdateWeapon(ns.mainhand, INVSLOT_MAINHAND)
+	UpdateWeapon(ns.offhand, INVSLOT_OFFHAND)
 end
 
 local function SetDefaults()
@@ -149,10 +127,9 @@ local function SetDefaults()
 		version = BPT_VERSION,
 		mainhand = {string = "M: %M:%S", showicon = false},
 		offhand  = {string = "O: %M:%S", showicon = false},
-		thrown   = {string = "T: %M:%S", showicon = false},
 	}
 	
-	if not BPT_DB.version or BPT_DB.version < 1.2 then --Update the DB to the 1.2 format
+	if not BPT_DB.version or BPT_DB.version < 1.2 then -- Update the DB to the 1.2 format
 		local mainhand = BPT_DB.mainhand.prefix .." ".. BPT_DB.mainhand.timer
 		local offhand = BPT_DB.offhand.prefix .." ".. BPT_DB.offhand.timer
 		local thrown = BPT_DB.thrown.prefix .." ".. BPT_DB.thrown.timer
@@ -164,7 +141,7 @@ local function SetDefaults()
 		}
 	end
 	
-	if BPT_DB.version < 1.3 then --Update the DB to the 1.3 format
+	if BPT_DB.version < 1.3 then -- Update the DB to the 1.3 format
 		local mainhand = BPT_DB.mainhand
 		local offhand = BPT_DB.offhand
 		local thrown = BPT_DB.thrown
@@ -175,45 +152,53 @@ local function SetDefaults()
 			thrown = {string = thrown, showicon = false},
 		}
 	end
+	
+	if BPT_DB.version < 2.0 then
+		BPT_DB.thrown = nil
+	end
 end
+
+f:RegisterEvent("PLAYER_ENTERING_WORLD")
+f:RegisterUnitEvent("UNIT_INVENTORY_CHANGED", "player")
+
+f:SetScript("OnEvent", function(self, event, ...)
+	self[event](self, ...)
+end)
 
 function f:PLAYER_ENTERING_WORLD()
 	SetDefaults()
 	self:InitialiseBuffTooltip()
 	UpdateWeapons()
-	self:UnregisterEvent("PLAYER_ENTERING_WORLD")--We only care about this when logging in, so no need to watch it after the initial fire.
+	self:UnregisterEvent("PLAYER_ENTERING_WORLD") -- We only care about this when logging in, so no need to watch it after the initial fire.
 end
-f:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-function f:UNIT_INVENTORY_CHANGED(UIC, unit)
-	if unit ~= "player" then return end
+function f:UNIT_INVENTORY_CHANGED(unit)
 	UpdateWeapons()
 end
-f:RegisterEvent("UNIT_INVENTORY_CHANGED")
 
-------------
---Tooltips--
-------------
+--------------
+-- Tooltips --
+--------------
 
 -- Pass GameTooltip as tooltip.
--- Pass "mainhand", "offhand" or "thrown" as objectname
-local function OnTooltipShow(tooltip, objectname)
-	tooltip:AddDoubleLine("PoisonTimers", ns[objectname].slotname)
-	tooltip:AddDoubleLine("|T".. ns[objectname].itemicon ..":25|t", ns[objectname].itemlink, 1,1,1, 1,1,1)
-	tooltip:AddDoubleLine("|T".. ns[objectname].poisonicon ..":25|t", ns[objectname].poisonname, 1,1,1, 1,1,1)
+-- Pass ns.mainhand or ns.offhand as dataObj
+local function OnTooltipShow(tooltip, dataObj)
+	tooltip:AddDoubleLine("PoisonTimers", dataObj.slotname)
+	tooltip:AddDoubleLine("|T".. dataObj.itemicon ..":25|t", dataObj.itemlink, 1,1,1, 1,1,1)
+	tooltip:AddDoubleLine("|T".. dataObj.poisonicon ..":25|t", dataObj.poisonname, 1,1,1, 1,1,1)
 end
 
-local function OnEnter(self, objectname)
+local function OnEnter(self, dataObj)
 	UpdateWeapons()
 	GameTooltip:SetOwner(self, "ANCHOR_NONE")
 	GameTooltip:SetPoint("TOPLEFT", self, "BOTTOMLEFT")
 	GameTooltip:ClearLines()
-	OnTooltipShow(GameTooltip, objectname)
+	OnTooltipShow(GameTooltip, dataObj)
 	GameTooltip:Show()
 end
 
 function ns.mainhand:OnEnter()
-	OnEnter(self, "mainhand")
+	OnEnter(self, ns.mainhand)
 end
 
 function ns.mainhand:OnLeave()
@@ -221,49 +206,75 @@ function ns.mainhand:OnLeave()
 end
 
 function ns.offhand:OnEnter()
-	OnEnter(self, "offhand")
+	OnEnter(self, ns.offhand)
 end
 
 function ns.offhand:OnLeave()
 	GameTooltip:Hide()
 end
 
-function ns.thrown:OnEnter()
-	OnEnter(self, "thrown")
+-------------------
+-- Slash Command --
+-------------------
+
+local Print, TPrint
+do
+	local colours = {
+		red = "|cffff0000",
+		cyan = "|cff33ff99",
+		green = "|cff00ff00",
+		blue = "|cff0000ff",
+		gold = "|cffffd800",
+		silver = "|cffb0b0b0",
+		copper = "|cff9a4f29",
+	}
+
+	local temp = {}
+	local function colourSub(...)
+		local numArgs = select("#", ...)
+		for i = 1, numArgs do
+			str = select(i, ...)
+			str = type(str) == "string" and str or tostring(str)
+			temp[i] = str:gsub("%$(%a+)%$", colours)
+		end
+		
+		return unpack(temp, 1, numArgs)
+	end
+	
+	local prefix = "$cyan$".. ADDON_NAME ..":|r"
+	
+	function Print(...)
+		print(colourSub(prefix, ...))
+	end
+	
+	function TPrint(num, ...)
+		print(colourSub(format("%".. 4 * num .."s", ""), ...))
+	end
 end
 
-function ns.thrown:OnLeave()
-	GameTooltip:Hide()
-end
-
------------------
---Slash Command--
------------------
 local function IsValidName(name)
-	return name == "mainhand" or name == "offhand" or name == "thrown"
+	return name == "mainhand" or name == "offhand"
 end
 
 SLASH_BROKER_POISONTIMERS1, SLASH_BROKER_POISONTIMERS2, SLASH_BROKER_POISONTIMERS3 = "/brokerpoisontimers", "/poisontimers", "/bpt"
 
 SlashCmdList.BROKER_POISONTIMERS = function(input)
 	local cmd, objectname, setting = input:trim():match("^(%a+)%s+(%a+)%s+(.+)$")
--- 	print(input:trim())
 	cmd, objectname = (cmd or ""):lower(), (objectname or ""):lower()
--- 	print(objectname)
--- 	print(setting)
+	
 	if cmd == "string" and IsValidName(objectname) then
 		BPT_DB[objectname].string = setting
-		f:Print(("Timer string for %s set to %q"):format(objectname, setting))
+		Print(("Timer string for %s set to %q"):format(objectname, setting))
 	elseif cmd == "showicon" and IsValidName(objectname) then
 		BPT_DB[objectname].showicon = (setting == "enable")
-		f:Print(("Poison icon for %s %s."):format(objectname, setting == "enable" and "$green$enabled" or "$red$disabled"))
+		Print(("Poison icon for %s %s."):format(objectname, setting == "enable" and "$green$enabled" or "$red$disabled"))
 	else
-		f:Print("Slash Command Usage.")
-		f:TPrint(1, ("$red$%s|r or $red$%s|r or $red$%s command mainhand||offhand||thrown setting|r"):format(SLASH_BROKER_POISONTIMERS1, SLASH_BROKER_POISONTIMERS2, SLASH_BROKER_POISONTIMERS3))
-		f:TPrint(2, "$red$showicon mainhand||offhand||thrown enable||disable|r -- Enable/disable showing of the poison/imbue icon next to the timer.")
-		f:TPrint(2, "$red$string mainhand||offhand||thrown setting|r -- Changes the time format of the specified timer to $red$setting|r. $red$setting|r can contain all characters (including spaces).")
-		f:TPrint(3, "$red$%M|r and $red$%S|r will be replaced with the minutes and seconds remaining, respectively. To display a percent sign in the format, you must use $red$%%|r. The default time format is \"$red$X: %M:%S|r\" (where $red$X|r is $red$M|r, $red$O|r or $red$T|r).")
-		f:TPrint(3, "Several other tokens can be used in the time format, but only the minutes/seconds have meaningful values. The other tokens can be found at the link to \"strftime\" at $green$http://www.wowpedia.org/API_date|r.")
-		f:TPrint(3, "If you get a Lua error telling you that the \"format is too long\", it actually means the function used to display the timers doesn't support one of the tokens you used.")
+		Print("Slash Command Usage.")
+		TPrint(1, ("$red$%s|r or $red$%s|r or $red$%s command mainhand||offhand setting|r"):format(SLASH_BROKER_POISONTIMERS1, SLASH_BROKER_POISONTIMERS2, SLASH_BROKER_POISONTIMERS3))
+		TPrint(2, "$red$showicon mainhand||offhand enable||disable|r -- Enable/disable showing of the poison/imbue icon next to the timer.")
+		TPrint(2, "$red$string mainhand||offhand setting|r -- Changes the time format of the specified timer to $red$setting|r. $red$setting|r can contain all characters (including spaces).")
+		TPrint(3, "$red$%M|r and $red$%S|r will be replaced with the minutes and seconds remaining, respectively. To display a percent sign in the format, you must use $red$%%|r. The default time format is \"$red$X: %M:%S|r\" (where $red$X|r is $red$M|r, $red$O|r or $red$T|r).")
+		TPrint(3, "Several other tokens can be used in the time format, but only the minutes/seconds have meaningful values. The other tokens can be found at the link to \"strftime\" at $green$http://www.wowpedia.org/API_date|r.")
+		TPrint(3, "If you get a Lua error telling you that the \"format is too long\", it actually means the function used to display the timers doesn't support one of the tokens you used.")
 	end
 end
