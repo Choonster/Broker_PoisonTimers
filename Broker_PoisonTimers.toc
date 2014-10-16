@@ -1,0 +1,13 @@
+## Interface: 40200
+## Title: Broker: PoisonTimers
+## Notes: DataBroker plugin that displays the time left on your poisons.
+## Author: Choonster of Nagrand US
+## SavedVariablesPerCharacter: BPT_DB
+## Version: 1.3
+
+Libs\ChoonLib-1.0\Libstub\LibStub.lua
+Libs\ChoonLib-1.0\CallbackHandler-1.0\CallbackHandler.lua
+Libs\ChoonLib-1.0\ChoonLib-1.0\ChoonLib-1.0.lua
+Libs\LibDataBroker-1.1\LibDataBroker-1.1.lua
+
+core.lua
